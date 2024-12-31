@@ -1,4 +1,4 @@
-sfrom isaacsim import SimulationApp
+from isaacsim import SimulationApp
 
 simulation_app = SimulationApp({"headless": False})
 
