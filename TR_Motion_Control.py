@@ -7,6 +7,7 @@ import sys
 
 import carb
 import numpy as np
+import math as math
 from omni.isaac.core import World
 from omni.isaac.core.robots import Robot
 from omni.isaac.core.utils.stage import add_reference_to_stage, get_stage_units
@@ -23,13 +24,18 @@ TR_V4 = my_world.scene.add(Robot(prim_path="/World/TR_V4", name="TR_V4"))
 for i in range(10):
     print("resetting...")
     my_world.reset()
-    TR_V4.set_joint_positions(np.array([0,0,0,0]))
+    print(TR_V4.dof_names)
+    TR_V4.get_applied_joint_efforts(joint_indices=np.array([3]))
+    TR_V4.set_joint_positions(np.array([0,0,0,math.pi/180*30]))
     for j in range(500):
         my_world.step(render=True)
-        if j == 100:
+        if j == 50:
             TR_V4.get_articulation_controller().apply_action(
-                ArticulationAction(joint_positions=np.array([np.random.uniform(-2, 2), np.random.uniform(-2, 2), np.random.uniform(-2, 2), np.random.uniform(-90, 90)]))
-            )
+                ArticulationAction(joint_positions=np.array([np.random.uniform(-2, 2), np.random.uniform(-2, 2), np.random.uniform(-2, 2), 0])))
+        if j == 300:
+            TR_V4.get_articulation_controller().apply_action(
+                ArticulationAction(joint_positions=np.array([np.random.uniform(math.pi/180*30, math.pi/180*330)]),joint_indices=np.array([3])))
+                
         if j == 400:
             print("TR's joint positions are: ", TR_V4.get_joint_positions())
 simulation_app.close()
