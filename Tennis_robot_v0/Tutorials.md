@@ -2,13 +2,15 @@ Isaac Lab Training
 https://youtu.be/o9Bym5mOl2k?si=5StA813SR1jcSOGM
 Go to /home/lai-jiang/IsaacLab/IsaacLab/source/standalone/workflows/sb3, 
 do play
-python3 play.py --task Custom-Wheeled-Quadruped-v0 --num_envs 8 --use_last_checkpoint
+python3 play.py --task Tennis_Robot-v0 --num_envs 8 --use_last_checkpoint
 do train
-python3 train.py --task Custom-Wheeled-Quadruped-v0 --num_envs 8
+python3 train.py --task Tennis_Robot-v0 --num_envs 8
 
 The source files should be on /home/lai-jiang/IsaacLab/IsaacLab/source/extensions/omni.isaac.lab_tasks/omni/isaac/lab_tasks/manager_based/classic/wheeled_quadruqed/wheeled_quadruped_env_cfg.py
 
 Making Tennis Robot file base on wheeled_quadruped_env_cfg, define the movement and reward functions.
+
+Create Tennis_robot_v0 folder on ~/IsaacLab/source/extensions/omni.isaac.lab_tasks/omni/isaac/lab_tasks/manager_based/classic/Tennis_robot_v0
 
 Change /home/lai-jiang/IsaacLab/IsaacLab/source/extensions/omni.isaac.lab_tasks/omni/isaac/lab_tasks/manager_based/classic/wheeled_quadruqed/__init__.py 
 gym.register(
