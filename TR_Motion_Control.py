@@ -26,7 +26,7 @@ TR_V4 = my_world.scene.add(Robot(prim_path="/World/TR_V4", name="TR_V4"))
 # 定义网球的参数
 radius = 0.033  # 网球半径，单位：米（标准网球直径为6.7cm）
 mass = 0.057  # 网球质量，单位：千克
-initial_speed = 1.0  # 初速度，单位：米/秒
+initial_speed = -2.0  # 初速度，单位：米/秒
 launch_angle_deg = 45.0  # 发射角度，单位：度
 g = 9.81  # gravity in m/s^2
 
@@ -40,34 +40,63 @@ initial_velocity = np.array([
     initial_speed * np.sin(launch_angle_rad)#z
 ])
 
-# Function to predict tennis ball landing point
-def predict_landing_point(position, velocity):
+initial_position = np.array([2.5, 4, 1])
+
+def calculate_rebound_peak(initial_position, initial_velocity, restitution, gravity=9.81):
     """
-    Predicts the landing point of the tennis ball using kinematics.
+    Calculate the 3D position of the ball's highest point after rebounding once.
+
+    Args:
+        initial_position (np.array): Initial 3D position of the ball (x0, y0, z0).
+        initial_velocity (np.array): Initial 3D velocity of the ball (vx, vy, vz).
+        restitution (float): Coefficient of restitution (e.g., 0.8 for 80% energy retention).
+        gravity (float): Gravitational acceleration (default is 9.81 m/s^2).
+
+    Returns:
+        np.array: 3D coordinates of the ball's highest point after the rebound (x, y, z).
     """
-    z0 = position[2]  # Initial height
-    vz = velocity[2]  # Vertical velocity
+    # Decompose initial position and velocity
+    x0, y0, z0 = initial_position
+    print(initial_position)
+    vx, vy, vz = initial_velocity
+    print(initial_velocity)
 
     # Time to hit the ground (z = 0)
-    time_to_ground = (vz + np.sqrt(vz**2 + 2 * g * z0)) / g
+    t_to_ground = (vz + np.sqrt(vz**2 + 2 * gravity * z0)) / gravity
+    x_ground = x0 + vx * t_to_ground
+    y_ground = y0 + vy * t_to_ground
+    z_ground = 0  # Ball hits the ground
 
-    # Final position in x and y after time_to_ground
-    landing_position = position[:2] + velocity[:2] * time_to_ground
-    return landing_position, time_to_ground
+    # Velocity after rebound
+    vz_after = -restitution * vz
+
+    # Time to reach the highest point after rebound
+    t_to_peak = vz_after / gravity
+
+    # Highest point after rebound
+    x_peak = x_ground + vx * t_to_peak
+    y_peak = y_ground + vy * t_to_peak
+    z_peak = vz_after**2 / (2 * gravity)
+    print("target point:")
+    print(np.array([x_peak, y_peak, z_peak]))
+    T = np.array([
+    [-1,  0,  0,  2],
+    [ 0, -1,  0,  2],
+    [ 0,  0,  1,  0],
+    [ 0,  0,  0,  1]
+])
+    print("TR location")
+    print(np.dot(T,np.array([x_peak, y_peak, z_peak, 1]).T))
+    return np.dot(T,np.array([x_peak, y_peak, z_peak, 1]).T)
 
 # Function to move the robot to target position
-def move_robot_to_target(robot, target_position, time_to_hit):
+def move_robot_to_target(robot):
     """
     Moves the robot to the target position.
     """
-    joint_positions = np.array([
-        target_position[0],  # Move to X
-        target_position[1],  # Move to Y
-        0.5,  # Set height for hitting
-        0.0,  # Paddle angle
-    ])
+    joint_positions = calculate_rebound_peak(initial_position,initial_velocity,1,9.81)
     robot.get_articulation_controller().apply_action(
-        ArticulationAction(joint_positions=joint_positions)
+        ArticulationAction(np.array([joint_positions[0], joint_positions[1], joint_positions[2], 0]))
     )
 
 for i in range(10):
@@ -79,7 +108,7 @@ for i in range(10):
     tennis_ball = DynamicSphere(
         prim_path=f"/World/tennis_ball_{i}",
         name=f"tennis_ball_{i}",
-        position=np.array([1, -2, 1]),
+        position=initial_position,
         radius=radius,
         color=np.array([1.0, 0.2, 0.2]),
         mass=mass
@@ -102,16 +131,11 @@ for i in range(10):
     # Set initial velocity
     tennis_ball.set_linear_velocity(initial_velocity)
 
-    # Predict landing point and time
-    landing_position, time_to_hit = predict_landing_point(
-        position=np.array([0, 0, 1]), velocity=initial_velocity
-    )
-    print(f"Predicted landing position: {landing_position}, time to hit: {time_to_hit}")
-
     # Move robot to target position
-    move_robot_to_target(TR_V4, landing_position, time_to_hit)
+    
 
-    for j in range(int(30 * 60)):  # Simulate until hit (60 steps per second)
+    for j in range(int(10 * 60)):  # Simulate until hit (60 steps per second)
+        move_robot_to_target(TR_V4)
         my_world.step(render=True)
 
     # 删除网球
