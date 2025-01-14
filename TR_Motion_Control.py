@@ -27,7 +27,7 @@ TR_V4 = my_world.scene.add(Robot(prim_path="/World/TR_V4", name="TR_V4"))
 radius = 0.033  # 网球半径，单位：米（标准网球直径为6.7cm）
 mass = 0.057  # 网球质量，单位：千克
 initial_speed = -2.0  # 初速度，单位：米/秒
-launch_angle_deg = 45.0  # 发射角度，单位：度
+launch_angle_deg = -45.0  # 发射角度，单位：度
 g = 9.81  # gravity in m/s^2
 
 # 将角度转换为弧度
@@ -40,7 +40,7 @@ initial_velocity = np.array([
     initial_speed * np.sin(launch_angle_rad)#z
 ])
 
-initial_position = np.array([2.5, 4, 1])
+initial_position = np.array([2.5, 5, 1])
 
 def calculate_rebound_peak(initial_position, initial_velocity, restitution, gravity=9.81):
     """
@@ -96,7 +96,7 @@ def move_robot_to_target(robot):
     """
     joint_positions = calculate_rebound_peak(initial_position,initial_velocity,1,9.81)
     robot.get_articulation_controller().apply_action(
-        ArticulationAction(np.array([joint_positions[0], joint_positions[1], joint_positions[2], 0]))
+        ArticulationAction(np.array([joint_positions[1], joint_positions[0], joint_positions[2], 0]))#'X_Pris', 'Z_Pris_H', 'Z_Pris_V', 'Racket_Pev'
     )
 
 for i in range(10):
