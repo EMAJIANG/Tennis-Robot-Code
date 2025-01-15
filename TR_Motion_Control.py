@@ -12,12 +12,33 @@ from omni.isaac.core import World
 from omni.isaac.core.robots import Robot
 from omni.isaac.core.utils.stage import add_reference_to_stage, get_stage_units
 from omni.isaac.core.utils.types import ArticulationAction
+from omni.isaac.core.utils.prims import create_prim
 from omni.isaac.nucleus import get_assets_root_path
-from omni.isaac.core.objects import DynamicSphere
+from omni.isaac.core.objects import DynamicSphere, GroundPlane
 from omni.isaac.core.materials import PhysicsMaterial
+import omni.kit.actions.core
+from pxr import Gf, Sdf, UsdGeom, UsdPhysics, UsdShade
 
 my_world = World(stage_units_in_meters=1.0)
-my_world.scene.add_default_ground_plane()
+
+action_registry = omni.kit.actions.core.get_action_registry()
+
+# switches to camera lighting
+action = action_registry.get_action("omni.kit.viewport.menubar.lighting", "set_lighting_mode_camera")
+# switches to stage lighting
+# action = action_registry.get_action("omni.kit.viewport.menubar.lighting", "set_lighting_mode_stage")
+action.execute()
+
+Ground_plane = my_world.scene.add_default_ground_plane(restitution = 1)
+
+Ground_material = PhysicsMaterial(
+    prim_path="/World/Ground_Material",  # path to the material prim to create
+    dynamic_friction=0.0,
+    static_friction=0.0,
+    restitution=1
+)
+
+Ground_plane.apply_physics_material(Ground_material)
 
 asset_path = "/home/lai-jiang/.local/share/ov/pkg/isaac-sim-4.2.0/TennisRobot/TR_V4.usd"
 add_reference_to_stage(usd_path=asset_path, prim_path="/World/TR_V4")
@@ -30,19 +51,35 @@ initial_speed = -2.0  # 初速度，单位：米/秒
 launch_angle_deg = -45.0  # 发射角度，单位：度
 g = 9.81  # gravity in m/s^2
 
+#Transition Matrix
+Trans = np.array([
+[-1,  0,  0,  2],
+[ 0, -1,  0,  2],
+[ 0,  0,  1,  0],
+[ 0,  0,  0,  1]])
+
 # 将角度转换为弧度
 launch_angle_rad = np.deg2rad(launch_angle_deg)
 
 # 计算初速度的分量
+# initial_velocity = np.array([
+#     0.0,#x
+#     initial_speed * np.cos(launch_angle_rad),#y
+#     initial_speed * np.sin(launch_angle_rad)#z
+# ])
 initial_velocity = np.array([
     0.0,#x
-    initial_speed * np.cos(launch_angle_rad),#y
-    initial_speed * np.sin(launch_angle_rad)#z
+    -2,#y
+    -5#z
 ])
 
-initial_position = np.array([2.5, 5, 1])
+initial_position = np.array([2.5, 6, 1])
 
-def calculate_rebound_peak(initial_position, initial_velocity, restitution, gravity=9.81):
+def calculate_rebound_peak(initial_position, initial_velocity, restitution, gravity=9.81, Transition_Matrix = np.array([
+[-1,  0,  0,  2],
+[ 0, -1,  0,  2],
+[ 0,  0,  1,  0],
+[ 0,  0,  0,  1]])):
     """
     Calculate the 3D position of the ball's highest point after rebounding once.
 
@@ -57,9 +94,7 @@ def calculate_rebound_peak(initial_position, initial_velocity, restitution, grav
     """
     # Decompose initial position and velocity
     x0, y0, z0 = initial_position
-    print(initial_position)
     vx, vy, vz = initial_velocity
-    print(initial_velocity)
 
     # Time to hit the ground (z = 0)
     t_to_ground = (vz + np.sqrt(vz**2 + 2 * gravity * z0)) / gravity
@@ -79,30 +114,26 @@ def calculate_rebound_peak(initial_position, initial_velocity, restitution, grav
     z_peak = vz_after**2 / (2 * gravity)
     print("target point:")
     print(np.array([x_peak, y_peak, z_peak]))
-    T = np.array([
-    [-1,  0,  0,  2],
-    [ 0, -1,  0,  2],
-    [ 0,  0,  1,  0],
-    [ 0,  0,  0,  1]
-])
+    TR_Motion = np.dot(Transition_Matrix,np.array([y_peak, x_peak, z_peak, 1]).T)
     print("TR location")
-    print(np.dot(T,np.array([x_peak, y_peak, z_peak, 1]).T))
-    return np.dot(T,np.array([x_peak, y_peak, z_peak, 1]).T)
+    print(TR_Motion)
+    return np.dot(Transition_Matrix,np.array([x_peak, y_peak, z_peak, 1]).T)
 
 # Function to move the robot to target position
 def move_robot_to_target(robot):
     """
     Moves the robot to the target position.
     """
-    joint_positions = calculate_rebound_peak(initial_position,initial_velocity,1,9.81)
+    joint_positions = calculate_rebound_peak(initial_position,initial_velocity,1,9.81, Transition_Matrix=Trans)
     robot.get_articulation_controller().apply_action(
-        ArticulationAction(np.array([joint_positions[1], joint_positions[0], joint_positions[2], 0]))#'X_Pris', 'Z_Pris_H', 'Z_Pris_V', 'Racket_Pev'
+        ArticulationAction(np.array([joint_positions[1], joint_positions[0]+0.95, joint_positions[2]-0.17412, 0]))#'X_Pris', 'Z_Pris_H', 'Z_Pris_V', 'Racket_Pev', bias x+0.7272, z+0.17412
     )
 
 for i in range(10):
 
-    print(f"Iteration {i + 1}: resetting world...")
+    print(f"#########################Iteration {i + 1}: resetting world...#########################")
     my_world.reset()
+
 
     # 创建网球
     tennis_ball = DynamicSphere(
@@ -135,8 +166,13 @@ for i in range(10):
     
 
     for j in range(int(10 * 60)):  # Simulate until hit (60 steps per second)
-        move_robot_to_target(TR_V4)
         my_world.step(render=True)
+        move_robot_to_target(TR_V4)
+        
+        # if j == 600:
+        #     position, orientation = TR_V4.get_world_pose()
+        #     print("Current location")
+        #     print(position)
 
     # 删除网球
     print(f"Removing tennis_ball_{i}")
