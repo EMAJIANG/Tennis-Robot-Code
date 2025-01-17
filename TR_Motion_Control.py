@@ -67,10 +67,11 @@ launch_angle_rad = np.deg2rad(launch_angle_deg)
 #     initial_speed * np.cos(launch_angle_rad),#y
 #     initial_speed * np.sin(launch_angle_rad)#z
 # ])
+
 initial_velocity = np.array([
     0.0,#x
-    -2,#y
-    -5#z
+    -2.5,#y
+    0.0#z
 ])
 
 initial_position = np.array([2.5, 6, 1])
@@ -97,7 +98,7 @@ def calculate_rebound_peak(initial_position, initial_velocity, restitution, grav
     vx, vy, vz = initial_velocity
 
     # Time to hit the ground (z = 0)
-    t_to_ground = (vz + np.sqrt(vz**2 + 2 * gravity * z0)) / gravity
+    t_to_ground = np.sqrt(2*z0/gravity)
     x_ground = x0 + vx * t_to_ground
     y_ground = y0 + vy * t_to_ground
     z_ground = 0  # Ball hits the ground
@@ -106,12 +107,14 @@ def calculate_rebound_peak(initial_position, initial_velocity, restitution, grav
     vz_after = -restitution * vz
 
     # Time to reach the highest point after rebound
-    t_to_peak = vz_after / gravity
+    t_to_peak = t_to_ground
+    # the time robot need to hit the ball
+    time_move = t_to_ground + t_to_peak
 
     # Highest point after rebound
     x_peak = x_ground + vx * t_to_peak
     y_peak = y_ground + vy * t_to_peak
-    z_peak = vz_after**2 / (2 * gravity)
+    z_peak = 0.5*gravity*t_to_peak**2
     print("target point:")
     print(np.array([x_peak, y_peak, z_peak]))
     TR_Motion = np.dot(Transition_Matrix,np.array([y_peak, x_peak, z_peak, 1]).T)
@@ -124,18 +127,18 @@ def move_robot_to_target(robot):
     """
     Moves the robot to the target position.
     """
+    
     joint_positions = calculate_rebound_peak(initial_position,initial_velocity,1,9.81, Transition_Matrix=Trans)
+    # import pdb; pdb.set_trace()
     robot.get_articulation_controller().apply_action(
-        ArticulationAction(np.array([joint_positions[1], joint_positions[0]+0.95, joint_positions[2]-0.17412, 0]))#'X_Pris', 'Z_Pris_H', 'Z_Pris_V', 'Racket_Pev', bias x+0.7272, z+0.17412
+        ArticulationAction(joint_positions=[joint_positions[1]+0.3, joint_positions[0]+1, joint_positions[2]-0.5, -30/180*2*math.pi],joint_velocities=[10,5,5,0])#'X_Pris', 'Z_Pris_H', 'Z_Pris_V', 'Racket_Pev', bias x+0.7272, z+0.17412, joint_velocities didnt work, should set controller mode to mixed
     )
+    #print('The robot velocity is: ',robot.get_joint_velocities())
+    # import pdb; pdb.set_trace()
+    return np.array([joint_positions[1]+0.3, joint_positions[0]+1.1, joint_positions[2]-0.45, 0])
 
-for i in range(10):
-
-    print(f"#########################Iteration {i + 1}: resetting world...#########################")
-    my_world.reset()
-
-
-    # 创建网球
+def ball_create(iteration): 
+    i = iteration
     tennis_ball = DynamicSphere(
         prim_path=f"/World/tennis_ball_{i}",
         name=f"tennis_ball_{i}",
@@ -144,10 +147,6 @@ for i in range(10):
         color=np.array([1.0, 0.2, 0.2]),
         mass=mass
     )
-
-    if not hasattr(tennis_ball, 'prim') or tennis_ball.prim is None:
-        print(f"Error: Tennis ball {i} prim is not initialized!")
-        continue
 
     material = PhysicsMaterial(
         prim_path=f"{tennis_ball.prim_path}/physicsMaterial",
@@ -158,24 +157,44 @@ for i in range(10):
     tennis_ball.apply_physics_material(material)
     my_world.scene.add(tennis_ball)
     print(f"Tennis ball created: {tennis_ball.prim_path}")
-
-    # Set initial velocity
     tennis_ball.set_linear_velocity(initial_velocity)
 
-    # Move robot to target position
+
+def main ():
     
+    for i in range(10):
+        print(f"#########################Iteration {i + 1}: resetting world...#########################")
+        my_world.reset()
+    
+       
 
-    for j in range(int(10 * 60)):  # Simulate until hit (60 steps per second)
-        my_world.step(render=True)
-        move_robot_to_target(TR_V4)
-        
-        # if j == 600:
-        #     position, orientation = TR_V4.get_world_pose()
-        #     print("Current location")
-        #     print(position)
+    # wait someseconds to create ball (for simualte ball prediction in real)
 
-    # 删除网球
-    print(f"Removing tennis_ball_{i}")
-    my_world.scene.remove_object(f"tennis_ball_{i}")
+        # Move robot to target position
+        for j in range(100):  # Simulate until hit (60 steps per second) 
+            my_world.step(render=True)
+            move_robot_to_target(TR_V4)
 
-simulation_app.close()
+        # create tennis ball 
+        ball_create(i)
+
+        for j in range(4*30,160):
+            my_world.step(render=True)
+            current_position = move_robot_to_target(TR_V4)
+            print("Joint States")
+            print(TR_V4.get_joint_positions())
+
+        for j in range(160,230):
+            TR_V4.get_articulation_controller().apply_action(
+            ArticulationAction(joint_positions=[current_position[0], current_position[1], current_position[2], 0/180*2*math.pi],joint_velocities=[10,5,5,10])#'X_Pris', 'Z_Pris_H', 'Z_Pris_V', 'Racket_Pev', bias x+0.7272, z+0.17412, joint_velocities didnt work, should set controller mode to mixed
+            )
+            my_world.step(render=True)
+        # 删除网球
+        print(f"Removing tennis_ball_{i}")
+        my_world.scene.remove_object(f"tennis_ball_{i}")
+
+    simulation_app.close()
+
+if __name__== '__main__':
+    main()
+
