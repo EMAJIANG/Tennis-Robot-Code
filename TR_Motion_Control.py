@@ -18,6 +18,9 @@ from omni.isaac.core.objects import DynamicSphere, GroundPlane
 from omni.isaac.core.materials import PhysicsMaterial
 import omni.kit.actions.core
 from pxr import Gf, Sdf, UsdGeom, UsdPhysics, UsdShade
+from omni.isaac.dynamic_control import _dynamic_control
+import time
+
 
 my_world = World(stage_units_in_meters=1.0)
 
@@ -40,7 +43,7 @@ Ground_material = PhysicsMaterial(
 
 Ground_plane.apply_physics_material(Ground_material)
 
-asset_path = "/home/lai-jiang/.local/share/ov/pkg/isaac-sim-4.2.0/TennisRobot/TR_V4.usd"
+asset_path = "./TR_V4.usd"
 add_reference_to_stage(usd_path=asset_path, prim_path="/World/TR_V4")
 TR_V4 = my_world.scene.add(Robot(prim_path="/World/TR_V4", name="TR_V4"))
 
@@ -115,11 +118,11 @@ def calculate_rebound_peak(initial_position, initial_velocity, restitution, grav
     x_peak = x_ground + vx * t_to_peak
     y_peak = y_ground + vy * t_to_peak
     z_peak = 0.5*gravity*t_to_peak**2
-    print("target point:")
-    print(np.array([x_peak, y_peak, z_peak]))
+    # print("target point:")
+    # print(np.array([x_peak, y_peak, z_peak]))
     TR_Motion = np.dot(Transition_Matrix,np.array([y_peak, x_peak, z_peak, 1]).T)
-    print("TR location")
-    print(TR_Motion)
+    # print("TR location")
+    # print(TR_Motion
     return np.dot(Transition_Matrix,np.array([x_peak, y_peak, z_peak, 1]).T)
 
 # Function to move the robot to target position
@@ -139,7 +142,7 @@ def move_robot_to_target(robot):
 
 def ball_create(iteration): 
     i = iteration
-    tennis_ball = DynamicSphere(
+    tennis_ball = DynamicSphere(    # DynamicSphere has ragid body API 
         prim_path=f"/World/tennis_ball_{i}",
         name=f"tennis_ball_{i}",
         position=initial_position,
@@ -147,7 +150,7 @@ def ball_create(iteration):
         color=np.array([1.0, 0.2, 0.2]),
         mass=mass
     )
-
+    
     material = PhysicsMaterial(
         prim_path=f"{tennis_ball.prim_path}/physicsMaterial",
         dynamic_friction=0.4,
@@ -155,9 +158,36 @@ def ball_create(iteration):
         restitution=1
     )
     tennis_ball.apply_physics_material(material)
-    my_world.scene.add(tennis_ball)
+    my_world.scene.add(tennis_ball) # add to world scene
     print(f"Tennis ball created: {tennis_ball.prim_path}")
-    tennis_ball.set_linear_velocity(initial_velocity)
+
+    # ensure start simulation at least one update
+    omni.timeline.get_timeline_interface().play() 
+    time.sleep(10) # delay waiting
+    # get current stage and tennisball prim
+    stage = omni.usd.get_context().get_stage()
+    ball_prim_path = f"/World/tennis_ball_{i}"
+    ball_prim = stage.GetPrimAtPath(ball_prim_path)
+    ###### register ragid body tennis ball
+    UsdPhysics.RigidBodyAPI.Apply(ball_prim)
+    # ball_rigidbody_api = UsdPhysics.RigidBodyAPI.Apply(ball_prim) 
+    # ball_rigidbody_api.CreateInitialLinearVelocityAttr(initial_velocity.tolist())
+    dc = _dynamic_control.acquire_dynamic_control_interface()
+    # according to tennis ball prim path to get handle
+    return_handle = dc.get_rigid_body(ball_prim_path)
+    if return_handle<0:
+        print('Fail to get return handle')
+    else:
+        print('success to get return handle')   
+        dc.wake_up_rigid_body(return_handle) # wake up rigid body
+        success = dc.set_rigid_body_linear_velocity(return_handle,[0.0,-2.5,0.0])
+        if not success:
+            print('Fail to set linear velocity')
+        else:
+            print('success to set linear velocity')
+        # my_world.scene.add(tennis_ball)
+        # print(f"Tennis ball created: {tennis_ball.prim_path}")
+    # tennis_ball.set_linear_velocity(initial_velocity)  # to be changed 
 
 
 def main ():
@@ -166,8 +196,6 @@ def main ():
         print(f"#########################Iteration {i + 1}: resetting world...#########################")
         my_world.reset()
     
-       
-
     # wait someseconds to create ball (for simualte ball prediction in real)
 
         # Move robot to target position
