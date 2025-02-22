@@ -18,6 +18,7 @@ from omni.isaac.core.objects import DynamicSphere, GroundPlane
 from omni.isaac.core.materials import PhysicsMaterial
 import omni.kit.actions.core
 from omni.isaac.core.prims import XFormPrimView, XFormPrim
+from omni.isaac.sensor import ContactSensor
 from pxr import Gf, Sdf, UsdGeom, UsdPhysics, UsdShade, Usd, UsdLux, UsdRender, UsdUI
 
 # import movement
@@ -72,15 +73,15 @@ Trans = np.array([
 # 将角度转换为弧度
 launch_angle_rad = np.deg2rad(launch_angle_deg)
 
-initial_velocity = np.array([
-    0.0,#x
-    -10,#y
-    0.0#z
-])
+# initial_velocity = np.array([
+#     0.0,#x
+#     -10,#y
+#     0.0#z
+# ])
 
-initial_position = np.array([2.5, 12, 1])
+# initial_position = np.array([2.5, 12, 1])
 
-def calculate_rebound_peak(initial_position, initial_velocity, restitution, gravity=9.81, Transition_Matrix = np.array([
+def calculate_rebound_peak(initial_position, initial_velocity, restitution, g=9.81, Transition_Matrix = np.array([
 [-1,  0,  0,  2],
 [ 0, -1,  0,  2],
 [ 0,  0,  1,  0],
@@ -141,7 +142,19 @@ def move_robot_to_target(robot,initial_position,initial_velocity,Trans):
     # import pdb; pdb.set_trace()
     return np.array([joint_positions[1]+0.3, joint_positions[0]+1.1, joint_positions[2]-0.55, 0])
 
-def ball_create(iteration): 
+def add_tennis_ball_contact_sensor(my_world,i):
+    ball_contact_sensor = my_world.scene.add(
+            ContactSensor(
+                prim_path=f"/World/tennis_ball_{i}" + "/contact_sensor",
+                name="tennis_ball_contact_sensor_{}".format(i),
+                min_threshold=0,
+                max_threshold=10000000,
+                radius=0.1,
+            )
+        )
+    return ball_contact_sensor
+
+def ball_create(my_world,iteration, initial_position,initial_velocity): 
     i = iteration
     tennis_ball = DynamicSphere(
         prim_path=f"/World/tennis_ball_{i}",
@@ -160,26 +173,32 @@ def ball_create(iteration):
     )
     tennis_ball.apply_physics_material(material)
     my_world.scene.add(tennis_ball)
+    ball_sensor = add_tennis_ball_contact_sensor(my_world,i)
     print(f"Tennis ball created: {tennis_ball.prim_path}")
     tennis_ball.set_linear_velocity(initial_velocity)
-    return tennis_ball
-
-
+    return tennis_ball, ball_sensor
 
 def main ():
     
-    for i in range(10):
+    for i in range(100000):
         print(f"#########################Iteration {i + 1}: resetting world...#########################")
-        my_world.reset()
+        if i == 0:
+            my_world.reset()
+            initial_position_temp = np.array([1,1,0,1])
+        else:
+            initial_position_temp = np.array([0,0,0,1])
+
+
 
         #generate random ball position and speed
         initial_velocity = np.array([
-            0.0,#x
-            -10,#+np.random.uniform(-2,2),#y
+            0,#x
+            -10,#y
             0.0#z
         ])
+        
         initial_position = np.array([
-            2.5, 
+            2.5+np.random.uniform(-1,1), 
             12,
             1
         ])
@@ -187,7 +206,6 @@ def main ():
         #calculate the distanc between the robot and the target position
         target_pos_temp, t_total = calculate_rebound_peak(initial_position, initial_velocity, 1, 9.81, Trans)
         target_pos_temp = np.array([target_pos_temp[0]+1.1, target_pos_temp[1]+0.3, target_pos_temp[2]-0.55, 1])
-        initial_position_temp = np.array([1,1,0,1])
         # print(np.dot(Trans,initial_position_temp.T))
         distance = initial_position_temp-target_pos_temp
         # print(distance)
@@ -212,7 +230,7 @@ def main ():
             move_robot_to_target(TR_V4,initial_position,initial_velocity,Trans)
 
         # create tennis ball 
-        tennis_ball = ball_create(i)
+        tennis_ball, ball_sensor = ball_create(my_world, i, initial_position, initial_velocity)
 
         # hit tennis ball
         for j in range(1,sim_step):
@@ -227,7 +245,13 @@ def main ():
 
         for j in range(1,120):
             my_world.step(render=True)
+            # print(ball_sensor.get_current_frame())
             ml.hit_tennisball_forehand(TR_V4,target_position)
+
+        for j in range(1,120):
+            ml.reset(TR_V4)
+            my_world.step(render=True)
+            
         
         # delete tennis ball
         print(f"Removing tennis_ball_{i}")
