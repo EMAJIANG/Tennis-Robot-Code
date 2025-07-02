@@ -1,0 +1,12 @@
+stages:
+  - name: incoming
+    condition: "ball_vel[1] < 0"
+
+  - name: miss_and_recover
+    condition: "ball_position[1] <= 0 or ball_position[0] <= 0"
+
+  - name: hitted
+    condition: "np.sign(ball_vel[1]) != np.sign(prev_ball_vel[1])"
+
+  - name: forward_and_recover
+    condition: "ball_vel[1] > 0"

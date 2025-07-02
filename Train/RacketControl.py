@@ -28,8 +28,6 @@ import time
 import numpy as np
 import math
 import rclpy
-import EnvInit
-import os
 from rclpy.node import Node
 from std_msgs.msg import Empty
 from geometry_msgs.msg import Point
@@ -61,6 +59,7 @@ class RacketControl(Node):
         self.pending_action_recover = False
         self.pending_action_hit = False
         self.pending_action  = None
+        self.get_logger().info("RacketControl Initialized")
 
     def angle_callback(self, msg:Bool):
         if msg.data:
