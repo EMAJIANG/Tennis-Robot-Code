@@ -61,6 +61,38 @@ x_profile_deceleration = int(1 * Y_CNT_2_DIG)
 profile_acceleration = int(1.5 * Y_CNT_2_DIG)
 profile_deceleration = int(1.5 * Y_CNT_2_DIG)
 
+class JointStatePublisher(Node):
+    """ROS2节点，定时发布关节状态"""
+    def __init__(self, owner):
+        super().__init__('TR_joint_state_publisher')
+        self.owner = owner
+        self.publisher_ = self.create_publisher(JointState, '/TR_joint_state', 10)
+        self.timer = self.create_timer(0.1, self.timer_callback)  # 10Hz
+        self.joint_names = ['axis_x1', 'axis_x2', 'axis_y', 'axis_z', 'axis_racket']
+        self.get_logger().info("关节状态发布器已启动")
+
+    def timer_callback(self):
+        """定时回调函数，发布当前关节状态"""
+        # 安全获取最新关节位置
+        with self.owner.joint_lock:
+            positions = self.owner.joint_positions
+        
+        # 创建并填充JointState消息
+        msg = JointState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'base_link'
+        msg.name = self.joint_names
+        msg.position = positions
+        msg.velocity = [0.0] * 5  # 速度信息（可选）
+        msg.effort = [0.0] * 5    # 力矩信息（可选）
+        
+        # 发布消息
+        self.publisher_.publish(msg)
+        self.get_logger().debug(f"发布关节状态: {positions}")
+
+    
+
+       
 class TRJointSubscriber(Node):
     """ROS2 Node that subscribes to TR_joint_command and maps incoming JointState -> target point."""
     def __init__(self, owner):
@@ -68,7 +100,7 @@ class TRJointSubscriber(Node):
         self.owner = owner  # MinimalExample instance
         self.sub = self.create_subscription(
             JointState,
-            'TR_joint_command',
+            '/TR_joint_command',
             self.joint_callback,
             10
         )
@@ -92,7 +124,7 @@ class TRJointSubscriber(Node):
         mapped_y = max(-1.0, min(1.0, 0.5 * in_x))
         mapped_x = max(0.0, min(1.0, (in_y + 2.0) / 4.0))
         mapped_z = in_z  # 保持不变
-        mapped_r = max(-120, min(120, (in_r / PI * 180)) #################################################################Todo: only maps the radian to degree with limitation, requiring further tune
+        mapped_r = max(-120, min(120, (in_r / PI * 180))) #################################################################Todo: only maps the radian to degree with limitation, requiring further tune
 
         # 将映射值转换为 counts （根据原脚本使用 X/Y/Z_CNT_2_DIG 定义）
         target_x_counts = int(mapped_x * X_CNT_2_DIG)
@@ -132,7 +164,9 @@ class MinimalExample:
                                         3: SlaveSet('Z', self.A6_PRODUCT_CODE, self.elmo_setup),
                                         4: SlaveSet('R', self.RACKET_PRODUCT_CODE, self.elmo_setup)
                                         }
-
+        self.joint_positions = [0.0, 0.0, 0.0, 0.0, 0.0]  # X1, X2, Y, Z, Racket
+        self.joint_lock = threading.Lock()
+        self.last_publish_time = 0
         # 将轨迹队列设为实例属性，供 ROS 回调与控制循环共享
         self.trajectory_points = collections.deque()
         self.trajectory_lock = threading.Lock()
@@ -146,14 +180,20 @@ class MinimalExample:
         def ros_thread_fn():
             rclpy.init()
             self._ros_node = TRJointSubscriber(self)
+            self._joint_publisher = JointStatePublisher(self)  # 新增关节状态发布器
             self._ros_running = True
             try:
-                rclpy.spin(self._ros_node)
+                # 创建多执行器同时运行两个节点
+                executor = rclpy.executors.MultiThreadedExecutor()
+                executor.add_node(self._ros_node)
+                executor.add_node(self._joint_publisher)
+                executor.spin()
             except Exception as e:
                 print(f"ROS spin exception: {e}")
             finally:
                 try:
                     self._ros_node.destroy_node()
+                    self._joint_publisher.destroy_node()
                 except Exception:
                     pass
                 rclpy.shutdown()
@@ -168,10 +208,17 @@ class MinimalExample:
             time.sleep(0.01)
         print("ROS2 subscriber thread started")
 
+    def update_joint_states(self, positions):
+        """更新关节位置（线程安全）"""
+        with self.joint_lock:
+            self.joint_positions = positions
+
     def stop_ros(self):
         """请求 ROS 停止"""
+       
         if self._ros_running:
             try:
+                executor.shutdown()  # 先停止执行器
                 rclpy.shutdown()
             except Exception:
                 pass
@@ -311,7 +358,7 @@ class MinimalExample:
 
 
                 # 这里我们做一次 send/receive 来读取 input 状态
-                if current_target_point is None and newest is not None::
+                if current_target_point is None and newest is not None:
                     # 如果还没有收到新点，就用默认零点
                    # if newest is None:
                    #     newest = {'x': 0, 'y': 0, 'z': 0, 'r': 0}  # 初始默认值
@@ -391,7 +438,7 @@ class MinimalExample:
                 except Exception:
                     r_actual_pos = struct.unpack('<i', self._master.slaves[4].sdo_read(ACTUAL_POSITION, 0))[0]
                     r_status_word = struct.unpack('<H', self._master.slaves[4].sdo_read(STATUSWORD, 0))[0]
-
+                
                 if cycle_counter % 10 == 0:
                     pos = {}
                     status = {}
@@ -400,6 +447,15 @@ class MinimalExample:
                         pos[name] = struct.unpack('<i', slave.sdo_read(ACTUAL_POSITION, 0))[0]
                         status[name] = struct.unpack('<H', slave.sdo_read(STATUSWORD, 0))[0]
                         print(f"{name} | Pos: {pos[name]:>10d} | Status: {status[name]:016b}")
+                
+                joint_positions = [
+                x1_actual_pos / X_CNT_2_DIG,       # X1 位置 
+                x2_actual_pos / X_CNT_2_DIG,       # X2 位置 
+                y_actual_pos / Y_CNT_2_DIG,         # Y 位置 
+                z_actual_pos / Z_CNT_2_DIG,         # Z 位置 
+                r_actual_pos / RACKET_2_DEGREE * PI / 180  # Racket 位置 (弧度)
+                ]
+                self.update_joint_states(joint_positions)
 
                 # 检查到达条件
                 if current_target_point is not None:
